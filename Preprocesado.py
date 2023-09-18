@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import pyzbar.pyzbar as pyzbar
+import PIL.Image as PILI
 import os
 
 #Tipo de dato que se retorna
@@ -9,15 +10,14 @@ class Resultado:
         self.nombre = fuente.split("/")[-1].split(".")[0]
         self.origen = fuente.split(self.nombre)[0]
         #provicionalmente se guarda en la misma carpeta que la imagen original
-        self.destino = self.origen + self.nombre + "/"
         self.preprocesadoExitoso = False
         self.notaDeError = None
         self.serie= None
 
     # - Origen: ruta de la imagen a procesar
-    # - Destinos: ruta de la imagen procesada (contiene el desgloce de imágenes)
     # - PreprocesadoExitoso: indica si el preprocesado está siendo exitoso
     # - Serie: lista de imágenes que componen el resultado del preprocesado
+    # - NotaDeError: indica el error que se produjo en el preprocesado (si es que hubo)
 
 #-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_
 # Variables globales
@@ -32,8 +32,7 @@ grosorRecuadro=np.round(grosorMarco*0.08,0).astype(int)
 #(el 0.08 se obtuvo tanteando)
 cantidadFilas=4 #cantidad de filas de cajas
 cantidadColumnas=7 #cantidad de columnas de cajas
-dimensionEntradaIA=64 #dimension de la imagen de entrada de la IA
-
+eco=True #indica si se imprimen mensajes de estado
 
 def ErrorDeProcesamiento(res, nota):
     #si no se agregó una nota, se agrega una por defecto "Error de procesamiento desconocido"
@@ -45,18 +44,17 @@ def ErrorDeProcesamiento(res, nota):
     return res
 
 def AnalizarQR(img):
-    print("Analizando QR...")
-    
-    cadena=pyzbar.decode(img)[0].data.decode('utf-8')
+    if eco:print("Analizando QR...")
 
+    cadena=pyzbar.decode(img)[0].data.decode('utf-8')
     if len(cadena)==0:
         return ""
-    print("QR analizado")
 
+    if eco:print("QR analizado")   
     return cadena
 
 def ValidarImagen(fuente):
-    print("Validando imagen...")
+    if eco:print("Validando imagen...")
 
     #.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~
     # Leer la imagen
@@ -67,7 +65,7 @@ def ValidarImagen(fuente):
 
     #obtener la imagen original
     try:
-        destinos=cv2.imread(fuente)
+        res_img=cv2.imread(fuente)
     except FileNotFoundError:
         return (ErrorDeProcesamiento(res, "No se pudo leer la imagen") ,None)
     except:
@@ -77,23 +75,23 @@ def ValidarImagen(fuente):
     #  Validad el contenido de la imagen
     #.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~
 
-    if destinos is None:
+    if res_img is None:
         return (ErrorDeProcesamiento(res, "No se pudo leer la imagen"),None)
     
-    if destinos.size==0 or destinos.shape[0]==0 or destinos.shape[1]==0:
+    if res_img.size==0 or res_img.shape[0]==0 or res_img.shape[1]==0:
         return (ErrorDeProcesamiento(res, "La imagen está vacía"),None)
     
     res.preprocesadoExitoso=True
     
-    print("Imagen validada")
-    return (res, destinos)
+    if eco:print("Imagen validada")
+    return (res, res_img)
 
 def GuardarImagen(img, dirección):
-    print("Guardando imagen... (", dirección, ")")
+    if eco:print("Guardando imagen... (", dirección, ")")
 
     #revisamos que la dirección sea válida
     if dirección is None or dirección=="":
-        print("Imagen no guardada")
+        print("Imagen no guardada, dirección no especificada")
         return False
     #revisamos si el directorio existe
     if not os.path.exists(os.path.dirname(dirección)):
@@ -101,15 +99,16 @@ def GuardarImagen(img, dirección):
         try:
             os.makedirs(os.path.dirname(dirección))
         except:
-            print("Imagen no guardada")
+            print("Imagen no guardada, dirección inválida")
             return False
-    #guardamos la imagen
+    #guardamos la imagen (ocupamos png para evitar la compresión de las imágenes)
     try:
-        cv2.imwrite(dirección, img)
+        cv2.imwrite(dirección+".png", img)
     except:
-        print("Imagen no guardada")
+        print("Imagen no guardada, error al guardar")
         return False
-    print("Imagen guardada")
+    
+    if eco:print("Imagen guardada")
     return True
 
 def ImprimirImagen(img, nombre):
@@ -118,17 +117,18 @@ def ImprimirImagen(img, nombre):
     cv2.destroyAllWindows()
 
 def ReorientarImagen(res,img_original):
-    print("Reorientando imagen...")
+    if eco:print("Reorientando imagen...")
     
-    #hacemos una copia para no afectarla con los filtros que aplicaremos
-    img=img_original.copy()
 
     #.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~
     # Manipular la imagen para facilitar la detección de los contornos
     #.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~.~
 
     #convertir la imagen a escala de grises
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    img_original = cv2.cvtColor(img_original, cv2.COLOR_BGR2GRAY)
+
+    #hacemos una copia para no afectarla con los filtros que aplicaremos
+    img=img_original.copy()
 
     #Esta parte necesita ser revisada !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     #aplicar filtro gaussiano (para reducir el ruido)
@@ -293,11 +293,8 @@ def ReorientarImagen(res,img_original):
     #detectar la línea guía (repetimos el proceso de detección de bordes)
     img=cv2.Canny(
             cv2.bilateralFilter(
-                cv2.GaussianBlur(
-                    cv2.cvtColor(
-                        img,cv2.COLOR_BGR2GRAY
-                    ),(5,5),0
-                ),20,30,30
+                cv2.GaussianBlur(img,(5,5),0)
+                ,20,30,30
             ),10,20
         )
     
@@ -366,17 +363,17 @@ def ReorientarImagen(res,img_original):
         alto=alto-ancho
     img_original=img_original[pixelesACortar:alto-pixelesACortar,pixelesACortar:ancho-pixelesACortar]
     
-    GuardarImagen(img_original,res.destino+res.nombre+"_reorientada.jpg")
     
-    print("Reorientación exitosa")
+    if eco:print("Reorientación exitosa")
 
     return res,img_original
 
-def SegmentarImagen(res,img):
-    print("Segmentando imagen...")
+def SegmentarImagen(res,img,dimensionEntradaIA,contrastar=False,normalizar=False):
+    if eco:print("Segmentando imagen...")
 
-    #matriz de puntos finales (un cuadrado de 32x32)
-    puntosFinales=np.float32([[0,0],[dimensionEntradaIA,0],[0,dimensionEntradaIA],[dimensionEntradaIA,dimensionEntradaIA]])
+    #matriz de puntos finales (un cuadrado de 32x32 + un marco de grosorRecuadro)
+    dimensionConMarco=dimensionEntradaIA+grosorRecuadro*2
+    puntosFinales=np.float32([[0,0],[dimensionConMarco,0],[0,dimensionConMarco],[dimensionConMarco,dimensionConMarco]])
 
     #cada imagen se segmenta en 4x7 espacios iguales
     recortes=[]
@@ -384,14 +381,13 @@ def SegmentarImagen(res,img):
     alto=len(img)
     ajusteVertical=0.95
     alto=int(alto*ajusteVertical)
-    recortes_exitosos=0
 
 
     #se segmenta la imagen en 4x7 espacios iguales
     for i in range(cantidadFilas):
         for j in range(cantidadColumnas):
             #nombre del recorte
-            nombreRecorte=res.destino+res.nombre+"_recorte_"+str(i)+"_"+str(j)+".jpg"
+            nombreRecorte=res.nombre+"_recorte_"+str(i)+"_"+str(j)
 
             #se calculan las coordenadas de los recortes
             x1=int((j*ancho)/cantidadColumnas)
@@ -413,9 +409,7 @@ def SegmentarImagen(res,img):
 
             recorte_aux=cv2.Canny(
                 cv2.bilateralFilter(
-                    cv2.cvtColor(
-                        recorte_aux,cv2.COLOR_BGR2GRAY
-                    ),20,30,30
+                        recorte_aux,20,30,30
                 ),10,20
             )
 
@@ -461,59 +455,62 @@ def SegmentarImagen(res,img):
             matriz=cv2.getPerspectiveTransform(puntosEntrada,puntosFinales)
 
             #se aplica la transformación
-            recorte_aux=cv2.warpPerspective(recorte,matriz,(dimensionEntradaIA,dimensionEntradaIA))
+            recorte_aux=cv2.warpPerspective(recorte,matriz,(dimensionConMarco,dimensionConMarco))
 
             #se recorta por última vez para quitar los bordes
-            recorte_aux=recorte_aux[grosorRecuadro:dimensionEntradaIA-grosorRecuadro,grosorRecuadro:dimensionEntradaIA-grosorRecuadro]
+            recorte_aux=recorte_aux[grosorRecuadro:dimensionConMarco-grosorRecuadro,grosorRecuadro:dimensionConMarco-grosorRecuadro]
+            
 
-            #se guarda el recorte
-            recortes.append((nombreRecorte,True))
-            GuardarImagen(recorte_aux,nombreRecorte)
+            #se contrasta la imagen
+            if contrastar:
+                #vamos a aumentar el contraste haciendo que valores inferiores a 255/2 sean redondeados a 0 y los superiores a éste, a 1
+                recorte_aux = np.where(recorte_aux > 255/2, 255, 0).astype(np.uint8)
+
+            if normalizar and not contrastar:
+                #hacemos que los valores de la imagen estén entre 0 y 1
+                recorte_aux = recorte_aux/255
+
+            recortes.append((recorte_aux,True))
+
+            ImprimirImagen(recorte_aux,nombreRecorte)
+
+            #se guarda el recorte (no se guardan porque se pasan como parámetro en memoria)
+            # GuardarImagen(recorte_aux,nombreRecorte)
+
+    #se guardan los recortes en el resultado
+    res.serie=[]
 
     #asignamos una letra a cada recorte
     for i in range(len(qr_str)):
-        recortes[i]=(recortes[i][0],recortes[i][1],qr_str[i])
+        #(letra,imagen(tensor))
+        if recortes[i][1]: 
+            res.serie.append((qr_str[i],recortes[i][0]))
 
-    #se guardan los recortes en el resultado
-    res.serie=recortes
-    
-    print("Segmentación exitosa")
+    if eco:print("Segmentación exitosa")
     
     return res
 
-def Preprocesar(fuente,destino=""):
-    print("Preprocesando imagen...")
+def Preprocesar(fuente,dimensionEntradaIA=32,normalizar=False,contrastar=False,eco_=True):
+    global eco
+    eco=eco_
+
+    if eco:print("Preprocesando ",fuente,"...")
 
     #leer la imagen
     res,img=ValidarImagen(fuente)
-    if destino!="": res.destino=destino
 
     #si la imagen es válida, se preprocesa
     if(res.preprocesadoExitoso):
         res,img=ReorientarImagen(res,img)
         if(res.preprocesadoExitoso):
-            res=SegmentarImagen(res,img)
+            res=SegmentarImagen(res,img,dimensionEntradaIA,contrastar,normalizar)
+            if(res.preprocesadoExitoso):
+                if eco:print("Preprocesamiento de ",fuente," exitoso")
+            else:
+                print("Segmentación fallida")
+        else:
+            print("Reorientación fallida")
+    else:
+        print("Validación fallida")
 
     return res
-
-fuentes=['./samples/Ejemplo_L.jpg','./samples/Ejemplo_R.jpg','./samples/Ejemplo_U.jpg','./samples/Ejemplo_D.jpg']
-for f in fuentes:
-    res=Preprocesar(f)
-    print("Nombre: "+res.nombre)
-    print("Origen: "+res.origen)
-    print("Destino: "+res.destino)
-    print("Preprocesado exitoso: "+str(res.preprocesadoExitoso))
-    print("Serie:")
-    for i in range(len(res.serie)):
-        print("\t"+str(res.serie[i]))
-
-# res=Preprocesar('./samples/Ejemplo_D.jpg')
-
-# #imprimir resultados
-# print("Nombre: "+res.nombre)
-# print("Origen: "+res.origen)
-# print("Destino: "+res.destino)
-# print("Preprocesado exitoso: "+str(res.preprocesadoExitoso))
-# print("Serie:")
-# for i in range(len(res.serie)):
-#     print("\t"+str(res.serie[i]))
